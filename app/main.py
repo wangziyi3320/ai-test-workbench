@@ -5,7 +5,11 @@ from io import StringIO
 import json
 import os
 from pathlib import Path
+import time
 from typing import Literal
+from urllib.parse import unquote, urlsplit
+
+import httpx
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -63,6 +67,41 @@ class DefectIn(BaseModel):
 
 class DefectPatch(BaseModel):
     status: Literal["open", "fixed", "verified", "closed"]
+
+
+class ExecuteIn(BaseModel):
+    base_url: str = Field(min_length=9, max_length=200)
+
+
+def execution_client() -> httpx.Client:
+    """独立工厂便于测试，执行时不沿用环境代理且不跟随重定向。"""
+    return httpx.Client(timeout=5.0, follow_redirects=False, trust_env=False)
+
+
+def _local_target(base_url: str, case_path: str) -> tuple[str, str]:
+    parsed = urlsplit(base_url.strip())
+    if (parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1"}
+            or parsed.username or parsed.password or parsed.path not in {"", "/"}
+            or parsed.query or parsed.fragment):
+        raise HTTPException(400, "base_url 只能是本机 HTTP 地址，例如 http://127.0.0.1:8000")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(400, "base_url 端口无效") from exc
+    if any(ord(ch) < 32 for ch in case_path) or "\\" in case_path:
+        raise HTTPException(400, "接口路径包含非法字符")
+    route = urlsplit(case_path)
+    if (route.scheme or route.netloc or route.fragment or not route.path.startswith("/")
+            or route.path.startswith("//") or "{" in case_path or "}" in case_path):
+        raise HTTPException(400, "接口路径必须是已填写参数的相对路径")
+    decoded = unquote(unquote(route.path))
+    if any(segment == ".." for segment in decoded.split("/")) or "\\" in decoded:
+        raise HTTPException(400, "接口路径不得包含目录跳转")
+    origin = f"http://{parsed.hostname}" + (f":{port}" if port is not None else "")
+    target = httpx.URL(origin + case_path)
+    if target.scheme != "http" or target.host != parsed.hostname or target.port != (port or 80):
+        raise HTTPException(400, "请求目标必须保持在指定本机服务")
+    return origin, str(target)
 
 
 def _requirement(conn, requirement_id: int) -> dict:
@@ -199,6 +238,46 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         with connection(path) as conn:
             _requirement(conn, requirement_id)
             rows = conn.execute("SELECT * FROM test_cases WHERE requirement_id=? ORDER BY id",
+                                (requirement_id,)).fetchall()
+            return [row_dict(row) for row in rows]
+
+    @app.post("/api/test-cases/{case_id}/execute", status_code=201)
+    def execute_case(case_id: int, payload: ExecuteIn):
+        with connection(path) as conn:
+            case = _case(conn, case_id)
+        if case["review_status"] != "approved":
+            raise HTTPException(400, "只有审核通过的用例可以执行")
+        if not case["method"] or not case["path"] or case["expected_http_status"] is None:
+            raise HTTPException(400, "请先补全 HTTP 方法、路径和预期状态码")
+        if case["method"] != "GET":
+            raise HTTPException(400, "内置执行器当前仅支持无请求体 GET；其他方法请使用 Postman")
+        origin, request_url = _local_target(payload.base_url, case["path"])
+        started = time.perf_counter()
+        actual_status = None
+        error = ""
+        try:
+            with execution_client() as client:
+                with client.stream("GET", request_url) as response:
+                    actual_status = response.status_code
+            if 300 <= actual_status < 400:
+                error = "收到重定向响应；执行器不会继续跳转"
+        except httpx.RequestError as exc:
+            error = f"本机请求失败：{type(exc).__name__}"
+        latency_ms = round((time.perf_counter() - started) * 1000, 2)
+        passed = int(actual_status == case["expected_http_status"] and not error)
+        with connection(path) as conn:
+            cursor = conn.execute("""
+                INSERT INTO test_runs(requirement_id,test_case_id,base_url,request_url,expected_status,
+                  actual_status,passed,latency_ms,error) VALUES(?,?,?,?,?,?,?,?,?)
+            """, (case["requirement_id"], case_id, origin, request_url, case["expected_http_status"],
+                  actual_status, passed, latency_ms, error))
+            return row_dict(conn.execute("SELECT * FROM test_runs WHERE id=?", (cursor.lastrowid,)).fetchone())
+
+    @app.get("/api/test-runs")
+    def list_runs(requirement_id: int):
+        with connection(path) as conn:
+            _requirement(conn, requirement_id)
+            rows = conn.execute("SELECT * FROM test_runs WHERE requirement_id=? ORDER BY id DESC LIMIT 100",
                                 (requirement_id,)).fetchall()
             return [row_dict(row) for row in rows]
 

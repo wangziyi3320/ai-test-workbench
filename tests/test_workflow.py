@@ -132,3 +132,49 @@ def test_llm_adapter_validates_grounding(monkeypatch):
     generated["cases"][0].update({"source_ref": "GET /links", "method": "GET", "path": "/links"})
     with pytest.raises(ValueError, match="未在接口文档中声明的方法"):
         llm_generate("openapi", json.dumps({"paths": {"/links": {"post": {"responses": {"201": {}}}}}}))
+
+
+def test_local_get_execution_records_pass_failure_and_rejects_unsafe_targets(client, monkeypatch):
+    created = client.post("/api/requirements", json={
+        "title": "本机健康检查", "content": "本机健康检查接口应返回 HTTP 200。",
+    }).json()
+    req_id = created["id"]
+    client.post(f"/api/requirements/{req_id}/generate", json={"mode": "offline"})
+    case_id = client.get(f"/api/test-cases?requirement_id={req_id}").json()[0]["id"]
+    endpoint = f"/api/test-cases/{case_id}/execute"
+    local = {"base_url": "http://127.0.0.1:8766"}
+    assert client.post(endpoint, json=local).status_code == 400
+    assert client.patch(f"/api/test-cases/{case_id}", json={
+        "method": "GET", "path": "/api/health", "expected_http_status": 200,
+        "review_status": "approved",
+    }).status_code == 200
+    for unsafe in ("http://example.com", "http://127.0.0.1:8766@evil.example", "file:///etc/passwd"):
+        assert client.post(endpoint, json={"base_url": unsafe}).status_code == 400
+    assert client.patch(f"/api/test-cases/{case_id}", json={"path": "//evil.example/path"}).status_code == 200
+    assert client.post(endpoint, json=local).status_code == 400
+    assert client.patch(f"/api/test-cases/{case_id}", json={"path": "/api/health"}).status_code == 200
+
+    statuses = iter((200, 503, 302))
+
+    def handler(request):
+        assert request.url.host == "127.0.0.1"
+        assert request.url.path == "/api/health"
+        return httpx.Response(next(statuses), headers={"Location": "http://example.com"})
+
+    monkeypatch.setattr("app.main.execution_client", lambda: httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False, trust_env=False,
+    ))
+    success = client.post(endpoint, json=local)
+    assert success.status_code == 201
+    assert success.json()["passed"] == 1
+    assert success.json()["actual_status"] == 200
+    failure = client.post(endpoint, json=local)
+    assert failure.json()["passed"] == 0
+    assert failure.json()["actual_status"] == 503
+    assert client.patch(f"/api/test-cases/{case_id}", json={"expected_http_status": 302}).status_code == 200
+    redirect = client.post(endpoint, json=local)
+    assert redirect.json()["passed"] == 0
+    assert "重定向" in redirect.json()["error"]
+    runs = client.get(f"/api/test-runs?requirement_id={req_id}").json()
+    assert len(runs) == 3
+    assert runs[0]["id"] == redirect.json()["id"]

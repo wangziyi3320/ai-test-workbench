@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { requirements: [], selectedId: null, selected: null, cases: [], defects: [] };
+const state = { requirements: [], selectedId: null, selected: null, cases: [], defects: [], runs: [] };
 const categoryNames = { normal: "正常", boundary: "边界", exception: "异常", security: "安全" };
 const statusNames = { draft: "待审核", approved: "已通过", rejected: "不采用" };
 const severityNames = { critical: "严重", major: "主要", minor: "次要" };
@@ -54,8 +54,9 @@ function renderRequirementList() {
 
 async function selectRequirement(id) {
   state.selectedId = id;
-  [state.selected, state.cases, state.defects] = await Promise.all([
-    api(`/api/requirements/${id}`), api(`/api/test-cases?requirement_id=${id}`), api(`/api/defects?requirement_id=${id}`),
+  [state.selected, state.cases, state.defects, state.runs] = await Promise.all([
+    api(`/api/requirements/${id}`), api(`/api/test-cases?requirement_id=${id}`),
+    api(`/api/defects?requirement_id=${id}`), api(`/api/test-runs?requirement_id=${id}`),
   ]);
   $("empty-state").hidden = true;
   $("workspace").hidden = false;
@@ -67,6 +68,7 @@ async function selectRequirement(id) {
   $("metric-defects").textContent = state.defects.length;
   renderRequirementList();
   renderCases();
+  renderRuns();
   renderDefects();
 }
 
@@ -92,6 +94,12 @@ function renderCases() {
     edit.type = "button";
     edit.addEventListener("click", () => openEditor(item));
     actions.append(edit);
+    if (item.review_status === "approved" && item.method === "GET" && item.path && item.expected_http_status) {
+      const run = el("button", "small-button", "本机执行");
+      run.type = "button";
+      run.addEventListener("click", () => executeCase(item, run));
+      actions.append(run);
+    }
     top.append(heading, actions);
     card.append(top, el("p", "", `步骤：${item.steps}`), el("p", "", `预期：${item.expected}`),
                 el("p", "source", `来源：${item.source_ref}`));
@@ -104,6 +112,42 @@ function renderCases() {
     const option = el("option", "", `#${item.id} ${item.title.slice(0, 46)}`);
     option.value = item.id;
     caseSelect.append(option);
+  }
+}
+
+async function executeCase(item, button) {
+  button.disabled = true;
+  try {
+    const result = await api(`/api/test-cases/${item.id}/execute`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: $("execution-base-url").value.trim() }),
+    });
+    await selectRequirement(state.selectedId);
+    toast(result.passed ? `用例 #${item.id} 通过，实际 HTTP ${result.actual_status}`
+      : `用例 #${item.id} 未通过：${result.error || `实际 HTTP ${result.actual_status ?? "无响应"}`}`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderRuns() {
+  const list = $("run-list");
+  list.replaceChildren();
+  if (!state.runs.length) {
+    list.append(el("div", "no-data", "还没有执行记录。先审核一条 GET 用例并补全接口信息。"));
+    return;
+  }
+  for (const item of state.runs) {
+    const row = el("div", "run-item");
+    const body = el("div");
+    const title = state.cases.find((candidate) => candidate.id === item.test_case_id)?.title || `用例 #${item.test_case_id}`;
+    body.append(el("strong", "", `#${item.test_case_id} ${title}`),
+      el("p", "", `${item.request_url} · 预期 ${item.expected_status} / 实际 ${item.actual_status ?? "无响应"} · ${item.latency_ms} ms · ${formatDate(item.executed_at)}`));
+    if (item.error) body.append(el("p", "", item.error));
+    row.append(body, el("span", `run-status ${item.passed ? "passed" : "failed"}`, item.passed ? "通过" : "未通过"));
+    list.append(row);
   }
 }
 
@@ -258,6 +302,8 @@ $("defect-form").addEventListener("submit", async (event) => {
     toast("缺陷已记录");
   } catch (error) { toast(error.message); }
 });
+
+$("execution-base-url").value = window.location.origin;
 
 (async () => {
   try {

@@ -52,8 +52,22 @@ CREATE TABLE IF NOT EXISTS generation_runs (
     case_count INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS test_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requirement_id INTEGER NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+    test_case_id INTEGER NOT NULL REFERENCES test_cases(id) ON DELETE CASCADE,
+    base_url TEXT NOT NULL,
+    request_url TEXT NOT NULL,
+    expected_status INTEGER NOT NULL,
+    actual_status INTEGER,
+    passed INTEGER NOT NULL CHECK(passed IN (0, 1)),
+    latency_ms REAL NOT NULL,
+    error TEXT NOT NULL DEFAULT '',
+    executed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_cases_requirement ON test_cases(requirement_id);
 CREATE INDEX IF NOT EXISTS idx_defects_requirement ON defects(requirement_id);
+CREATE INDEX IF NOT EXISTS idx_runs_requirement ON test_runs(requirement_id);
 """
 
 

@@ -6,6 +6,7 @@
   <meta name="description" content="从需求到测试用例、人工审核和缺陷追踪的本地工作台">
   <title>TraceLab · AI 测试与缺陷工作台</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/execution.css">
 </head>
 <body>
   <header class="topbar">
@@ -54,7 +55,13 @@
           <div id="case-list" class="case-list"></div>
         </section>
 
-        <section class="card defect-card"><div class="card-heading"><div><span class="step-dot">04</span><h2>缺陷记录</h2></div><span class="muted">关联需求与具体用例</span></div>
+        <section class="card execution-card">
+          <div class="card-heading"><div><span class="step-dot">04</span><h2>本机接口执行</h2></div><span class="muted">审核通过后记录实际结果</span></div>
+          <div class="execution-toolbar"><label>目标服务地址<input id="execution-base-url" type="url" placeholder="http://127.0.0.1:8766" aria-describedby="execution-help"></label><p id="execution-help">仅支持本机 HTTP GET、无请求体；不会跟随重定向。审核通过且已填写路径和预期状态码的用例可在上方点击“本机执行”。</p></div>
+          <div id="run-list" class="run-list"></div>
+        </section>
+
+        <section class="card defect-card"><div class="card-heading"><div><span class="step-dot">05</span><h2>缺陷记录</h2></div><span class="muted">关联需求与具体用例</span></div>
           <form id="defect-form" class="defect-form"><div class="form-grid"><label>缺陷标题<input id="defect-title" placeholder="例如：缺少必填参数时返回 500" required minlength="3"></label><label>严重程度<select id="defect-severity"><option value="major">主要</option><option value="critical">严重</option><option value="minor">次要</option></select></label></div><div class="form-grid"><label>关联用例<select id="defect-case"><option value="">不关联具体用例</option></select></label><label>复现步骤<input id="defect-steps" placeholder="输入条件与操作步骤" required minlength="3"></label></div><div class="form-grid"><label>预期结果<input id="defect-expected" placeholder="应该出现什么" required minlength="3"></label><label>实际结果<input id="defect-actual" placeholder="实际出现什么" required minlength="3"></label></div><div class="form-actions end"><button class="secondary-button" type="submit">记录缺陷</button></div></form>
           <div id="defect-list" class="defect-list"></div>
         </section>

@@ -10,6 +10,7 @@
 - **两种生成模式**：离线规则模式可复现且不需要密钥；模型 API 模式调用兼容 OpenAI Chat Completions 的真实服务，返回结构化草稿。
 - **需求追踪与人工审核**：每条用例保留 `source_ref`，默认 `draft`；人工修改步骤、预期和优先级后可审核通过或弃用。
 - **导出**：仅导出已审核通过的用例；CSV 可用于用例归档，Postman Collection 带状态码断言。
+- **本机接口执行**：对审核通过、信息完整的 GET 用例执行状态码检查，记录通过/失败、实际状态和耗时。
 - **缺陷管理**：缺陷关联需求及用例，记录复现步骤、预期、实际、严重程度和状态。
 - **技术栈**：Python、FastAPI、Pydantic、SQLite、原生 HTML/CSS/JavaScript、Pytest。
 
@@ -17,7 +18,7 @@
 
 ```text
 app/
-  db.py            SQLite 表结构与连接
+  db.py            SQLite 表结构与连接（包括执行记录）
   generation.py    OpenAPI/文本离线生成与可选模型适配器
   main.py          HTTP API、导出和页面入口
 static/            响应式网页
@@ -68,6 +69,7 @@ $env:LLM_API_KEY = "填入自己的密钥"
 4. 导出 CSV；未通过的用例不会出现。
 5. 导入 [`sample_data/short_link_openapi.json`](sample_data/short_link_openapi.json)，审核通过一条接口用例后导出 Postman Collection。
 6. 在缺陷区填写复现步骤、预期与实际，关联一条用例并更新状态。
+7. 另导入 [`sample_data/local_health_openapi.json`](sample_data/local_health_openapi.json)，生成并审核 GET `/api/health` 用例；在“本机接口执行”中填当前服务地址（默认是当前网页地址），点击用例的“本机执行”，查看 HTTP 200 和耗时记录。
 
 完整录屏脚本见 [`docs/DEMO.md`](docs/DEMO.md)，需求和验收标准见 [`docs/PRD.md`](docs/PRD.md)。
 
@@ -75,13 +77,17 @@ $env:LLM_API_KEY = "填入自己的密钥"
 
 导出集合只提供 `{{base_url}}`、方法、路径和已审核的 HTTP 状态码断言。真实接口调用前，仍要在 Postman 中填写请求参数、Body、Header 和鉴权；部分路径参数也需手动替换。只有文档声明或人工补充且审核通过的状态码会进入断言。**导出成功不代表接口测试已通过。**
 
+### 内置执行器的边界
+
+执行器只接受 `localhost` 或 `127.0.0.1` 的 HTTP 服务地址，只运行审核通过的 GET 用例；请求体、请求头、授权和路径占位符需使用 Postman 或其他专业测试工具。它不使用系统代理，也不跟随重定向。每次执行会在本地 SQLite 留下实际状态、通过/失败、耗时和错误信息。运行前请确认目标是你有权测试的本机服务；不要将工作台公开部署，因为当前没有账号认证。
+
 ## 验证
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-测试覆盖需求创建、边界草稿、重复生成、人工审核与 CSV 安全导出、OpenAPI 上传与 Postman 导出、缺陷关联校验、上传大小限制，以及模拟兼容模型 API 的结构化输出校验。当前本地运行结果：`4 passed`。真实模型输出质量与实际接口执行效果尚未测量，因此不在简历中填报准确率或效率提升数字。
+测试覆盖需求创建、边界草稿、重复生成、人工审核与 CSV 安全导出、OpenAPI 上传与 Postman 导出、缺陷关联校验、上传大小限制、模拟兼容模型 API 的结构化输出校验，以及本机接口执行的通过、失败、重定向和目标限制。当前本地运行结果：`5 passed`。真实模型输出质量与实际业务接口执行效果尚未测量，因此不在简历中填报准确率或效率提升数字。
 
 ## 数据与安全边界
 
@@ -93,6 +99,6 @@ $env:LLM_API_KEY = "填入自己的密钥"
 
 ## 简历表述建议
 
-“独立开发基于 FastAPI + SQLite 的 AI 测试与缺陷工作台，支持需求/OpenAPI 导入、离线规则或可配置大模型生成测试用例草稿、来源追踪和人工审核；实现 CSV/Postman 导出与关联缺陷管理，并编写端到端 API 测试。”
+“独立开发基于 FastAPI + SQLite 的 AI 测试与缺陷工作台，支持需求/OpenAPI 导入、离线规则或可配置大模型生成测试用例草稿、来源追踪和人工审核；实现 CSV/Postman 导出、本机 GET 接口状态码执行记录与关联缺陷管理，并编写端到端 API 测试。”
 
 这段只描述仓库已经实现的能力；模型效果、真实项目缺陷数和效率数据需要另行实测。
