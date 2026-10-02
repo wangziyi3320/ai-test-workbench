@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="从需求到测试用例、人工审核和缺陷追踪的本地工作台">
+  <title>TraceLab · AI 测试与缺陷工作台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">T<span>•</span></span><div><strong>TraceLab</strong><small>AI 测试与缺陷工作台</small></div></div>
+    <div class="top-right"><span id="mode-indicator" class="mode-indicator">检查生成模式…</span><span class="avatar">W</span></div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-heading"><span>工作空间</span><span class="tiny-pill">LOCAL</span></div>
+      <button class="nav-current" type="button"><span class="nav-icon">▦</span>需求与测试</button>
+      <div class="sidebar-section-head"><span>需求文档</span><span id="requirement-count">0</span></div>
+      <div id="requirement-list" class="requirement-list"></div>
+      <p class="sidebar-note">所有数据保存在本机 SQLite。用例生成后需要人工审核，才能导出。</p>
+    </aside>
+
+    <main class="main">
+      <div class="page-intro">
+        <div><p class="eyebrow">QUALITY WORKSPACE / 01</p><h1>让每条需求都有迹可循。</h1><p class="intro-copy">导入脱敏需求或 OpenAPI 文档，生成测试草稿，审查每一步，再记录实际缺陷。</p></div>
+        <div class="intro-graphic" aria-hidden="true"><span>需求</span><i></i><span>用例</span><i></i><span>缺陷</span></div>
+      </div>
+
+      <section class="card create-card" aria-labelledby="import-title">
+        <div class="card-heading"><div><span class="step-dot">01</span><h2 id="import-title">新建需求</h2></div><span class="muted">支持文字、Markdown 和 OpenAPI JSON</span></div>
+        <form id="requirement-form">
+          <div class="form-grid"><label>文档名称<input id="req-title" placeholder="例如：短链生成接口验收需求" required minlength="2" maxlength="120"></label><label>文档类型<select id="req-kind"><option value="requirement">文字需求</option><option value="openapi">OpenAPI JSON</option></select></label></div>
+          <label>需求内容<textarea id="req-content" placeholder="粘贴脱敏需求，每条验收标准独占一行…" required minlength="8"></textarea></label>
+          <div class="form-actions"><div class="file-actions"><label class="upload-link">↑ 导入 .txt / .md / .json<input id="file-input" type="file" accept=".txt,.md,.json" hidden></label><button class="text-button" type="button" id="load-sample">载入示例</button></div><button class="primary-button" type="submit">保存需求 <span>→</span></button></div>
+        </form>
+      </section>
+
+      <section id="empty-state" class="card empty-state"><div class="empty-icon">✳</div><h2>从一份需求开始</h2><p>左侧会显示创建过的文档。保存后，即可生成并审核测试用例。</p></section>
+
+      <div id="workspace" hidden>
+        <section class="document-head">
+          <div><p class="eyebrow">SELECTED DOCUMENT</p><h2 id="selected-title"></h2><p id="selected-meta" class="muted"></p></div>
+          <div class="metric-row"><div class="metric"><strong id="metric-cases">0</strong><span>用例</span></div><div class="metric"><strong id="metric-approved">0</strong><span>已审核</span></div><div class="metric"><strong id="metric-defects">0</strong><span>缺陷</span></div></div>
+        </section>
+
+        <section class="card source-card"><div class="card-heading"><div><span class="step-dot">02</span><h2>来源文档</h2></div><span class="muted">测试用例保留原文定位</span></div><pre id="source-content"></pre></section>
+
+        <section class="card work-card">
+          <div class="card-heading"><div><span class="step-dot">03</span><h2>测试用例</h2></div><span class="muted">生成 → 编辑 → 审核 → 导出</span></div>
+          <div class="toolbar"><div class="toolbar-left"><select id="generation-mode" aria-label="生成模式"><option value="auto">自动选择生成模式</option><option value="offline">离线规则模式</option><option value="llm">模型 API 模式</option></select><button id="generate-button" class="primary-button" type="button">生成用例草稿</button></div><div class="toolbar-right"><button id="csv-button" class="secondary-button" type="button">导出 CSV</button><button id="postman-button" class="secondary-button" type="button">导出 Postman</button></div></div>
+          <div class="notice">草稿中的步骤和预期结果需逐条确认；OpenAPI 导出的请求参数与授权信息需要在 Postman 中补充。</div>
+          <div id="case-list" class="case-list"></div>
+        </section>
+
+        <section class="card defect-card"><div class="card-heading"><div><span class="step-dot">04</span><h2>缺陷记录</h2></div><span class="muted">关联需求与具体用例</span></div>
+          <form id="defect-form" class="defect-form"><div class="form-grid"><label>缺陷标题<input id="defect-title" placeholder="例如：缺少必填参数时返回 500" required minlength="3"></label><label>严重程度<select id="defect-severity"><option value="major">主要</option><option value="critical">严重</option><option value="minor">次要</option></select></label></div><div class="form-grid"><label>关联用例<select id="defect-case"><option value="">不关联具体用例</option></select></label><label>复现步骤<input id="defect-steps" placeholder="输入条件与操作步骤" required minlength="3"></label></div><div class="form-grid"><label>预期结果<input id="defect-expected" placeholder="应该出现什么" required minlength="3"></label><label>实际结果<input id="defect-actual" placeholder="实际出现什么" required minlength="3"></label></div><div class="form-actions end"><button class="secondary-button" type="submit">记录缺陷</button></div></form>
+          <div id="defect-list" class="defect-list"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="case-dialog"><form id="case-form" method="dialog"><div class="dialog-head"><div><p class="eyebrow">HUMAN REVIEW</p><h2>审核测试用例</h2></div><button type="button" id="close-dialog" class="close-button" aria-label="关闭">×</button></div><input type="hidden" id="edit-case-id"><label>标题<input id="edit-title" required minlength="3"></label><div class="form-grid"><label>类型<select id="edit-category"><option value="normal">正常</option><option value="boundary">边界</option><option value="exception">异常</option><option value="security">安全</option></select></label><label>优先级<select id="edit-priority"><option>P0</option><option>P1</option><option>P2</option></select></label></div><label>前置条件<textarea id="edit-preconditions"></textarea></label><label>执行步骤<textarea id="edit-steps" required minlength="3"></textarea></label><label>预期结果<textarea id="edit-expected" required minlength="3"></textarea></label><label>需求来源<input id="edit-source" required minlength="2"></label><div class="form-grid"><label>HTTP 方法<input id="edit-method" placeholder="GET / POST"></label><label>接口路径<input id="edit-path" placeholder="/api/items"></label></div><div class="form-grid"><label>预期 HTTP 状态码<input id="edit-status-code" type="number" min="100" max="599" placeholder="例如 200"></label><label>审核状态<select id="edit-review"><option value="draft">待审核</option><option value="approved">审核通过</option><option value="rejected">不采用</option></select></label></div><div class="dialog-actions"><button type="button" id="cancel-dialog" class="secondary-button">取消</button><button type="submit" class="primary-button">保存修改</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "短链服务演示接口（虚构数据）",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/links": {
+      "post": {
+        "summary": "创建短链",
+        "parameters": [
+          {
+            "name": "X-Tenant-Id",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["long_url"],
+                "properties": {
+                  "long_url": { "type": "string", "format": "uri" }
+                }
+              },
+              "example": { "long_url": "https://example.com/article" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "创建成功" },
+          "400": { "description": "请求参数错误" },
+          "401": { "description": "未授权" }
+        }
+      },
+      "get": {
+        "summary": "获取短链列表",
+        "responses": {
+          "200": { "description": "列表返回成功" },
+          "401": { "description": "未授权" }
+        }
+      }
+    }
+  }
+}
